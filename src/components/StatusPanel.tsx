@@ -54,6 +54,69 @@ const StatBar: React.FC<{
   );
 };
 
+const GravityBar: React.FC<{
+  offset: number;
+  penalty: number;
+}> = ({ offset, penalty }) => {
+  const direction = offset > 0.01 ? '偏右 →' : offset < -0.01 ? '← 偏左' : '平衡';
+  const color = penalty < 0.1 ? '#4ade80' : penalty < 0.4 ? '#fbbf24' : '#f87171';
+  const penaltyPct = Math.round(penalty * 100);
+
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginBottom: '4px',
+          fontSize: '14px',
+        }}
+      >
+        <span>⚖️ 重心</span>
+        <span style={{ color, fontSize: '12px' }}>{direction}</span>
+      </div>
+      <div
+        style={{
+          height: '12px',
+          backgroundColor: '#2d2d44',
+          borderRadius: '6px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: '50%',
+            width: '1px',
+            height: '100%',
+            backgroundColor: '#555',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            height: '100%',
+            width: '8px',
+            borderRadius: '3px',
+            backgroundColor: color,
+            left: `${50 + offset * 50}%`,
+            transform: 'translateX(-50%)',
+            transition: 'left 0.3s ease',
+          }}
+        />
+      </div>
+      {penalty > 0.01 && (
+        <div style={{ fontSize: '11px', color, marginTop: '2px' }}>
+          惩罚: 推石失败+{Math.round(penalty * 50)}% | 移动消耗+{Math.round(penalty * 200)}%
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const StatusPanel: React.FC<StatusPanelProps> = ({
   player,
   turn,
@@ -108,6 +171,8 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
         color="#fbbf24"
         icon="🎒"
       />
+
+      <GravityBar offset={player.gravityOffset} penalty={player.gravityPenalty} />
 
       <StatBar
         label="亮度"

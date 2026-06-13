@@ -6,6 +6,10 @@ import {
   Position,
   Tile,
   InventoryItem,
+  BACKPACK_ROWS,
+  BACKPACK_COLS,
+  BACKPACK_CAPACITY,
+  GridPosition,
 } from '../types/game';
 import { generateRoomTemplate, TUTORIAL_ROOM } from '../data/rooms';
 import { getRandomRelic, RELICS } from '../data/relics';
@@ -26,7 +30,90 @@ export function createInitialPlayer(): PlayerState {
     inventory: [],
     depth: 1,
     torchesRemaining: 5,
+    gravityOffset: 0,
+    gravityPenalty: 0,
   };
+}
+
+export function calculateGravity(player: PlayerState): { offset: number; penalty: number } {
+  const inventory = player.inventory;
+  if (inventory.length === 0) {
+    return { offset: 0, penalty: 0 };
+  }
+
+  const totalWeight = inventory.reduce((sum, item) => sum + item.weight, 0);
+  if (totalWeight === 0) {
+    return { offset: 0, penalty: 0 };
+  }
+
+  const centerCol = (BACKPACK_COLS - 1) / 2;
+  let weightedColSum = 0;
+  for (const item of inventory) {
+    weightedColSum += item.gridCol * item.weight;
+  }
+
+  const centerOfGravity = weightedColSum / totalWeight;
+  const offset = centerOfGravity - centerCol;
+
+  const maxOffset = centerCol;
+  const normalizedOffset = Math.abs(offset) / maxOffset;
+  const penalty = normalizedOffset * normalizedOffset;
+
+  return { offset: Math.round(offset * 100) / 100, penalty: Math.round(penalty * 100) / 100 };
+}
+
+export function applyGravity(game: GameState): void {
+  const { offset, penalty } = calculateGravity(game.player);
+  game.player.gravityOffset = offset;
+  game.player.gravityPenalty = penalty;
+}
+
+function findEmptySlot(inventory: InventoryItem[]): GridPosition | null {
+  const occupied = new Set(inventory.map(i => `${i.gridRow},${i.gridCol}`));
+  for (let row = 0; row < BACKPACK_ROWS; row++) {
+    for (let col = 0; col < BACKPACK_COLS; col++) {
+      if (!occupied.has(`${row},${col}`)) {
+        return { row, col };
+      }
+    }
+  }
+  return null;
+}
+
+export function moveItemInBackpack(game: GameState, itemId: string, targetRow: number, targetCol: number): GameState {
+  const newGame = deepClone(game);
+  const item = newGame.player.inventory.find(i => i.id === itemId);
+  if (!item) return newGame;
+
+  if (targetRow < 0 || targetRow >= BACKPACK_ROWS || targetCol < 0 || targetCol >= BACKPACK_COLS) {
+    newGame.message = '目标位置超出背包范围。';
+    return newGame;
+  }
+
+  const existingItem = newGame.player.inventory.find(
+    i => i.gridRow === targetRow && i.gridCol === targetCol
+  );
+
+  if (existingItem) {
+    const oldRow = item.gridRow;
+    const oldCol = item.gridCol;
+    existingItem.gridRow = oldRow;
+    existingItem.gridCol = oldCol;
+  }
+
+  item.gridRow = targetRow;
+  item.gridCol = targetCol;
+
+  applyGravity(newGame);
+
+  if (Math.abs(newGame.player.gravityOffset) > 0.01) {
+    const direction = newGame.player.gravityOffset > 0 ? '右' : '左';
+    newGame.message = `整理了背包。重心偏${direction}（${Math.abs(newGame.player.gravityOffset).toFixed(1)}），推石失败率 +${Math.round(newGame.player.gravityPenalty * 100)}%，移动体力消耗 +${(newGame.player.gravityPenalty * 2).toFixed(1)}`;
+  } else {
+    newGame.message = '整理了背包。重心均衡，没有偏移惩罚！';
+  }
+
+  return newGame;
 }
 
 function createRoomState(depth: number): RoomState {
@@ -148,6 +235,8 @@ export function movePlayer(game: GameState, direction: Direction): GameState {
   if (game.status !== 'exploring' && game.status !== 'escaping') return game;
 
   const newGame = deepClone(game);
+  applyGravity(newGame);
+
   const offset = getDirectionOffset(direction);
   const newPos = {
     x: newGame.player.position.x + offset.x,
@@ -203,12 +292,22 @@ export function movePlayer(game: GameState, direction: Direction): GameState {
       return newGame;
     }
 
-    if (newGame.player.stamina < 5) {
+    const pushCost = 5 + Math.round(newGame.player.gravityPenalty * 3);
+    if (newGame.player.stamina < pushCost) {
       newGame.message = '体力不足，推不动石头。';
       return newGame;
     }
 
-    newGame.player.stamina -= 5;
+    const failChance = newGame.player.gravityPenalty * 0.5;
+    if (Math.random() < failChance) {
+      newGame.player.stamina -= 3;
+      newGame.turn += 1;
+      const dir = newGame.player.gravityOffset > 0 ? '右' : '左';
+      newGame.message = `推石失败！背包重心偏${dir}，身体失去平衡，浪费了3点体力。请整理背包！`;
+      return newGame;
+    }
+
+    newGame.player.stamina -= pushCost;
 
     if (stoneTargetTile.type === 'pressurePlate') {
       stoneTargetTile.activated = true;
@@ -248,7 +347,8 @@ export function movePlayer(game: GameState, direction: Direction): GameState {
   }
 
   newGame.player.position = newPos;
-  newGame.player.stamina -= 1;
+  const moveCost = 1 + Math.round(newGame.player.gravityPenalty * 2);
+  newGame.player.stamina -= moveCost;
   newGame.turn += 1;
 
   checkTrap(newGame);
@@ -320,33 +420,54 @@ function checkRelic(game: GameState) {
   if (relicInstance) {
     const relicData = RELICS.find((r) => r.id === relicInstance.relicId);
     if (relicData) {
-      if (game.player.weight + relicData.weight <= game.player.maxWeight) {
-        relicInstance.collected = true;
+      if (game.player.inventory.length >= BACKPACK_CAPACITY) {
+        game.message = `背包格子已满，捡不起${relicData.name}。请丢弃或整理背包腾出空间。`;
+        return;
+      }
 
-        const item: InventoryItem = {
-          id: `inv_${Date.now()}_${Math.random()}`,
-          relicId: relicData.id,
-          name: relicData.name,
-          weight: relicData.weight,
-          value: relicData.value,
-          isGenuine: null,
-          curseLevel: relicData.curseLevel,
-          icon: relicData.icon,
-          appraised: false,
-        };
+      if (game.player.weight + relicData.weight > game.player.maxWeight) {
+        game.message = `背包太重了，捡不起${relicData.name}（重量${relicData.weight}）。请丢弃物品减轻负重。`;
+        return;
+      }
 
-        game.player.inventory.push(item);
-        game.player.weight += relicData.weight;
-        game.player.curse += relicData.curseLevel;
+      const slot = findEmptySlot(game.player.inventory);
+      if (!slot) {
+        game.message = `背包没有空格子了。请整理背包腾出空间。`;
+        return;
+      }
 
-        game.room.tiles[y][x] = {
-          ...game.room.tiles[y][x],
-          type: 'floor',
-        };
+      relicInstance.collected = true;
 
-        game.message = `你捡到了${relicData.name}！`;
+      const item: InventoryItem = {
+        id: `inv_${Date.now()}_${Math.random()}`,
+        relicId: relicData.id,
+        name: relicData.name,
+        weight: relicData.weight,
+        value: relicData.value,
+        isGenuine: null,
+        curseLevel: relicData.curseLevel,
+        icon: relicData.icon,
+        appraised: false,
+        gridRow: slot.row,
+        gridCol: slot.col,
+      };
+
+      game.player.inventory.push(item);
+      game.player.weight += relicData.weight;
+      game.player.curse += relicData.curseLevel;
+
+      applyGravity(game);
+
+      game.room.tiles[y][x] = {
+        ...game.room.tiles[y][x],
+        type: 'floor',
+      };
+
+      if (Math.abs(game.player.gravityOffset) > 0.01) {
+        const dir = game.player.gravityOffset > 0 ? '右' : '左';
+        game.message = `捡到了${relicData.name}！⚠️重心偏${dir}，推石失败率 +${Math.round(game.player.gravityPenalty * 50)}%`;
       } else {
-        game.message = `背包太满了，捡不起${relicData.name}。可按空格丢弃物品。`;
+        game.message = `捡到了${relicData.name}！重心保持均衡。`;
       }
     }
   }
@@ -658,7 +779,15 @@ export function dropItem(game: GameState, itemId: string): GameState {
   newGame.player.inventory.splice(itemIndex, 1);
   newGame.player.weight -= item.weight;
   newGame.player.curse = Math.max(0, newGame.player.curse - item.curseLevel);
-  newGame.message = `丢弃了 ${item.name}。负重减轻，诅咒降低。`;
+
+  applyGravity(newGame);
+
+  if (Math.abs(newGame.player.gravityOffset) > 0.01) {
+    const dir = newGame.player.gravityOffset > 0 ? '右' : '左';
+    newGame.message = `丢弃了 ${item.name}。负重减轻，诅咒降低。⚠️重心仍偏${dir}。`;
+  } else {
+    newGame.message = `丢弃了 ${item.name}。负重减轻，诅咒降低。重心恢复均衡！`;
+  }
 
   return newGame;
 }

@@ -92,6 +92,8 @@ export interface PlayerState {
   inventory: InventoryItem[];
   depth: number;
   torchesRemaining: number;
+  gravityOffset: number;
+  gravityPenalty: number;
 }
 
 export interface InventoryItem {
@@ -104,7 +106,18 @@ export interface InventoryItem {
   curseLevel: number;
   icon: string;
   appraised: boolean;
+  gridRow: number;
+  gridCol: number;
 }
+
+export interface GridPosition {
+  row: number;
+  col: number;
+}
+
+export const BACKPACK_ROWS = 4;
+export const BACKPACK_COLS = 3;
+export const BACKPACK_CAPACITY = BACKPACK_ROWS * BACKPACK_COLS;
 
 export interface GameState {
   player: PlayerState;

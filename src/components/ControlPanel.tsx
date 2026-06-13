@@ -165,7 +165,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div>💡 提示:</div>
         <div>• 方向键/WASD 移动</div>
         <div>• 推石头到机关上开门</div>
-        <div>• 小心陷阱和诅咒</div>
+        <div>• 重心偏移影响推石和体力</div>
+        <div>• 整理背包平衡重心是关键</div>
         <div>• 见好就收，及时撤离</div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import {
   dropItem,
   calculateEscapeValue,
   interact,
+  moveItemInBackpack,
 } from '../engine/gameEngine';
 import { GameBoard } from '../components/GameBoard';
 import { StatusPanel } from '../components/StatusPanel';
@@ -82,6 +83,10 @@ export const GamePage: React.FC = () => {
 
   const handleDrop = useCallback((itemId: string) => {
     setGame((prev) => dropItem(prev, itemId));
+  }, []);
+
+  const handleMoveItem = useCallback((itemId: string, targetRow: number, targetCol: number) => {
+    setGame((prev) => moveItemInBackpack(prev, itemId, targetRow, targetCol));
   }, []);
 
   const handleInteract = useCallback(() => {
@@ -245,7 +250,7 @@ export const GamePage: React.FC = () => {
             🏛️ 遗迹搬砖者
           </h1>
           <p style={{ color: '#888', marginTop: '4px' }}>
-            肉鸽网格探索 · 推石解谜 · 文物鉴定
+            肉鸽网格探索 · 推石解谜 · 重心管理 · 文物鉴定
           </p>
           <div style={{ fontSize: '14px', color: '#aaa', marginTop: '8px' }}>
             累计金币: 💰 {getTotalGold()} | 最深层数: 🏛️ {getBestDepth()}
@@ -380,8 +385,11 @@ export const GamePage: React.FC = () => {
 
           <InventoryPanel
             inventory={game.player.inventory}
+            gravityOffset={game.player.gravityOffset}
+            gravityPenalty={game.player.gravityPenalty}
             onAppraise={handleAppraise}
             onDrop={handleDrop}
+            onMoveItem={handleMoveItem}
             canAppraise={canAppraise}
           />
         </div>
