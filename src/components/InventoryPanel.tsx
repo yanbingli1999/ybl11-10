@@ -50,6 +50,10 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
   const gravityColor =
     gravityPenalty < 0.1 ? '#4ade80' : gravityPenalty < 0.4 ? '#fbbf24' : '#f87171';
 
+  const failRate = Math.round(gravityPenalty * 50);
+  const moveExtraCost = Math.round(gravityPenalty * 2);
+  const pushExtraCost = Math.round(gravityPenalty * 3);
+
   const leftWeight = inventory
     .filter((i) => i.gridCol === 0)
     .reduce((s, i) => s + i.weight, 0);
@@ -88,7 +92,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
           <span style={{ color: gravityColor, fontWeight: 'bold' }}>{gravityDirection}</span>
           {gravityPenalty > 0.01 && (
             <span style={{ color: gravityColor, fontSize: '11px' }}>
-              (推石失败+{Math.round(gravityPenalty * 50)}% | 体力消耗+{Math.round(gravityPenalty * 200)}%)
+              (推石失败+{failRate}% | 移动+{moveExtraCost}点 | 推石+{pushExtraCost}点)
             </span>
           )}
         </div>

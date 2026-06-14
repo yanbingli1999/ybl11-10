@@ -13,6 +13,7 @@ import {
   calculateEscapeValue,
   interact,
   moveItemInBackpack,
+  migrateSavedGame,
 } from '../engine/gameEngine';
 import { GameBoard } from '../components/GameBoard';
 import { StatusPanel } from '../components/StatusPanel';

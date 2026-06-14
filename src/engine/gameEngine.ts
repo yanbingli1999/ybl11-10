@@ -48,8 +48,19 @@ export function calculateGravity(player: PlayerState): { offset: number; penalty
 
   const centerCol = (BACKPACK_COLS - 1) / 2;
   let weightedColSum = 0;
+  let hasInvalidItem = false;
+
   for (const item of inventory) {
-    weightedColSum += item.gridCol * item.weight;
+    const col = item.gridCol;
+    if (col === undefined || col === null || isNaN(col) || col < 0 || col >= BACKPACK_COLS) {
+      hasInvalidItem = true;
+      continue;
+    }
+    weightedColSum += col * item.weight;
+  }
+
+  if (hasInvalidItem) {
+    return { offset: 0, penalty: 0 };
   }
 
   const centerOfGravity = weightedColSum / totalWeight;
@@ -60,6 +71,79 @@ export function calculateGravity(player: PlayerState): { offset: number; penalty
   const penalty = normalizedOffset * normalizedOffset;
 
   return { offset: Math.round(offset * 100) / 100, penalty: Math.round(penalty * 100) / 100 };
+}
+
+export function getGravityPenaltyDisplay(penalty: number): {
+  failRate: number;
+  moveExtraCost: number;
+  pushExtraCost: number;
+} {
+  return {
+    failRate: Math.round(penalty * 50),
+    moveExtraCost: Math.round(penalty * 2),
+    pushExtraCost: Math.round(penalty * 3),
+  };
+}
+
+function migrateInventoryItem(item: any, occupiedSlots: Set<string>, idx: number): InventoryItem {
+  let gridRow = item.gridRow;
+  let gridCol = item.gridCol;
+
+  if (
+    gridRow === undefined || gridRow === null || isNaN(gridRow) ||
+    gridCol === undefined || gridCol === null || isNaN(gridCol) ||
+    gridRow < 0 || gridRow >= BACKPACK_ROWS ||
+    gridCol < 0 || gridCol >= BACKPACK_COLS ||
+    occupiedSlots.has(`${gridRow},${gridCol}`)
+  ) {
+    const row = Math.floor(idx / BACKPACK_COLS) % BACKPACK_ROWS;
+    const col = idx % BACKPACK_COLS;
+    if (!occupiedSlots.has(`${row},${col}`)) {
+      gridRow = row;
+      gridCol = col;
+    } else {
+      for (let r = 0; r < BACKPACK_ROWS; r++) {
+        for (let c = 0; c < BACKPACK_COLS; c++) {
+          if (!occupiedSlots.has(`${r},${c}`)) {
+            gridRow = r;
+            gridCol = c;
+            break;
+          }
+        }
+        if (gridRow !== undefined && gridCol !== undefined) break;
+      }
+    }
+  }
+
+  occupiedSlots.add(`${gridRow},${gridCol}`);
+
+  return {
+    ...item,
+    gridRow: gridRow ?? 0,
+    gridCol: gridCol ?? 0,
+  };
+}
+
+export function migrateSavedGame(saved: any): GameState {
+  const migrated = deepClone(saved) as GameState;
+
+  if (!migrated.player) return migrated;
+
+  if (migrated.player.gravityOffset === undefined || migrated.player.gravityOffset === null) {
+    migrated.player.gravityOffset = 0;
+  }
+  if (migrated.player.gravityPenalty === undefined || migrated.player.gravityPenalty === null) {
+    migrated.player.gravityPenalty = 0;
+  }
+
+  if (Array.isArray(migrated.player.inventory)) {
+    const occupiedSlots = new Set<string>();
+    migrated.player.inventory = migrated.player.inventory.map((item, idx) =>
+      migrateInventoryItem(item, occupiedSlots, idx)
+    );
+  }
+
+  return migrated;
 }
 
 export function applyGravity(game: GameState): void {
@@ -108,7 +192,8 @@ export function moveItemInBackpack(game: GameState, itemId: string, targetRow: n
 
   if (Math.abs(newGame.player.gravityOffset) > 0.01) {
     const direction = newGame.player.gravityOffset > 0 ? '右' : '左';
-    newGame.message = `整理了背包。重心偏${direction}（${Math.abs(newGame.player.gravityOffset).toFixed(1)}），推石失败率 +${Math.round(newGame.player.gravityPenalty * 100)}%，移动体力消耗 +${(newGame.player.gravityPenalty * 2).toFixed(1)}`;
+    const display = getGravityPenaltyDisplay(newGame.player.gravityPenalty);
+    newGame.message = `整理了背包。重心偏${direction}（${Math.abs(newGame.player.gravityOffset).toFixed(1)}），推石失败率 +${display.failRate}%，移动体力消耗 +${display.moveExtraCost}点，推石消耗 +${display.pushExtraCost}点`;
   } else {
     newGame.message = '整理了背包。重心均衡，没有偏移惩罚！';
   }
@@ -214,8 +299,10 @@ export function createInitialGame(): GameState {
 }
 
 export function createGameFromSaved(saved: GameState): GameState {
-  updateVisibility(saved);
-  return saved;
+  const migrated = migrateSavedGame(saved);
+  applyGravity(migrated);
+  updateVisibility(migrated);
+  return migrated;
 }
 
 function getDirectionOffset(direction: Direction): Position {
@@ -465,7 +552,8 @@ function checkRelic(game: GameState) {
 
       if (Math.abs(game.player.gravityOffset) > 0.01) {
         const dir = game.player.gravityOffset > 0 ? '右' : '左';
-        game.message = `捡到了${relicData.name}！⚠️重心偏${dir}，推石失败率 +${Math.round(game.player.gravityPenalty * 50)}%`;
+        const display = getGravityPenaltyDisplay(game.player.gravityPenalty);
+        game.message = `捡到了${relicData.name}！⚠️重心偏${dir}，推石失败率 +${display.failRate}%，移动体力消耗 +${display.moveExtraCost}点`;
       } else {
         game.message = `捡到了${relicData.name}！重心保持均衡。`;
       }

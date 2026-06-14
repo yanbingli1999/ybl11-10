@@ -60,7 +60,9 @@ const GravityBar: React.FC<{
 }> = ({ offset, penalty }) => {
   const direction = offset > 0.01 ? '偏右 →' : offset < -0.01 ? '← 偏左' : '平衡';
   const color = penalty < 0.1 ? '#4ade80' : penalty < 0.4 ? '#fbbf24' : '#f87171';
-  const penaltyPct = Math.round(penalty * 100);
+  const failRate = Math.round(penalty * 50);
+  const moveExtraCost = Math.round(penalty * 2);
+  const pushExtraCost = Math.round(penalty * 3);
 
   return (
     <div style={{ marginBottom: '10px' }}>
@@ -110,7 +112,7 @@ const GravityBar: React.FC<{
       </div>
       {penalty > 0.01 && (
         <div style={{ fontSize: '11px', color, marginTop: '2px' }}>
-          惩罚: 推石失败+{Math.round(penalty * 50)}% | 移动消耗+{Math.round(penalty * 200)}%
+          推石失败+{failRate}% | 移动+{moveExtraCost}点 | 推石+{pushExtraCost}点
         </div>
       )}
     </div>
